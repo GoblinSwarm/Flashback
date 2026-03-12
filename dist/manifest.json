@@ -1,0 +1,47 @@
+{
+  "manifest_version": 3,
+
+  "name": "Flashback",
+  "description": "Instant replay for live streams. Rewind the last seconds you missed on Twitch.",
+  "version": "1.0.0",
+
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+
+  "action": {
+    "default_title": "Flashback",
+    "default_popup": "popup.html"
+  },
+
+  "permissions": ["activeTab", "scripting"],
+
+  "host_permissions": [
+    "*://*.twitch.tv/*"
+  ],
+
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.twitch.tv/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "assets/*"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ]
+}

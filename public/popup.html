@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Flashback · Popup</title>
+
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --bg-0: #2349a7;
+      --bg-1: #2e56b7;
+      --bg-2: #3a6ad6;
+
+      --card-0: rgba(255, 255, 255, 0.11);
+      --card-1: rgba(255, 255, 255, 0.08);
+
+      --stroke: rgba(255, 255, 255, 0.16);
+      --stroke-strong: rgba(255, 255, 255, 0.24);
+
+      --text: rgba(255, 255, 255, 0.96);
+      --text-dim: rgba(255, 255, 255, 0.74);
+      --text-soft: rgba(255, 255, 255, 0.58);
+
+      --pill-bg: rgba(255, 255, 255, 0.14);
+      --pill-stroke: rgba(255, 255, 255, 0.24);
+
+      --btn-bg: rgba(255, 255, 255, 0.16);
+      --btn-hover: rgba(255, 255, 255, 0.22);
+      --btn-press: rgba(255, 255, 255, 0.12);
+
+      --shadow-main: 0 20px 42px -18px rgba(0, 0, 0, 0.42);
+      --shadow-soft: 0 10px 24px -14px rgba(0, 0, 0, 0.28);
+
+      --radius-xl: 26px;
+      --radius-lg: 18px;
+      --radius-pill: 999px;
+    }
+
+    html,
+    body {
+      width: 360px;
+      min-height: 250px;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 14px;
+      background:
+        radial-gradient(900px 500px at 20% 0%, rgba(255, 255, 255, 0.18), transparent 55%),
+        radial-gradient(700px 420px at 100% 20%, rgba(0, 0, 0, 0.14), transparent 60%),
+        linear-gradient(180deg, var(--bg-0), var(--bg-1) 55%, var(--bg-2));
+    }
+
+    .card {
+      width: 100%;
+      border-radius: var(--radius-xl);
+      padding: 18px 18px 16px;
+      background: linear-gradient(180deg, var(--card-0), var(--card-1));
+      border: 1px solid var(--stroke);
+      box-shadow: var(--shadow-main);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+
+    .header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .title-wrap {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    .title {
+      color: var(--text);
+      font-weight: 800;
+      font-size: 19px;
+      line-height: 1.1;
+      letter-spacing: -0.25px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .tagline {
+      color: var(--text-dim);
+      font-size: 13px;
+      line-height: 1.25;
+    }
+
+    .status {
+      flex: 0 0 auto;
+      margin-top: 2px;
+      padding: 7px 12px;
+      border-radius: var(--radius-pill);
+      background: var(--pill-bg);
+      border: 1px solid var(--pill-stroke);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.2px;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    }
+
+    .divider {
+      height: 1px;
+      margin: 15px 0 16px;
+      background: rgba(255, 255, 255, 0.14);
+      border-radius: 1px;
+    }
+
+    .content {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .button-shell {
+      padding: 8px;
+      border-radius: 22px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.10);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    }
+
+    .btn {
+      width: 100%;
+      padding: 15px 18px;
+      border: 1px solid var(--stroke-strong);
+      border-radius: var(--radius-lg);
+      background: var(--btn-bg);
+      color: var(--text);
+      font-size: 16px;
+      font-weight: 800;
+      letter-spacing: 0.1px;
+      cursor: pointer;
+      box-shadow: var(--shadow-soft);
+      transition:
+        transform 0.10s ease,
+        background 0.15s ease,
+        border-color 0.15s ease,
+        box-shadow 0.15s ease;
+    }
+
+    .btn:hover {
+      background: var(--btn-hover);
+      border-color: rgba(255, 255, 255, 0.34);
+      transform: translateY(-1px);
+      box-shadow: 0 12px 28px -16px rgba(0, 0, 0, 0.34);
+    }
+
+    .btn:active {
+      background: var(--btn-press);
+      transform: translateY(0) scale(0.992);
+    }
+
+    .btn[disabled] {
+      opacity: 0.72;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+
+    .meta {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      padding: 0 4px;
+    }
+
+    .replay-time {
+      color: var(--text-dim);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .shortcut {
+      color: var(--text-soft);
+      font-size: 12px;
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .shortcut strong {
+      color: var(--text-dim);
+      font-weight: 700;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="card">
+    <div class="header">
+      <div class="title-wrap">
+        <div class="title">Flashback</div>
+        <div class="tagline">Instant replay for live streams</div>
+      </div>
+
+      <div class="status" id="statusBadge">Ready</div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="content">
+      <div class="button-shell">
+        <button class="btn" id="btnFlashback" type="button">
+          Flashback
+        </button>
+      </div>
+
+      <div class="meta">
+        <div class="replay-time">Replay: 25 seconds</div>
+        <div class="shortcut">Shortcut: <strong>Shift + R</strong></div>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./popup.js"></script>
+</body>
+</html>
