@@ -339,9 +339,11 @@ export class ContinuousDvrEngine {
     this.flushing = false;
     this.resetting = false;
     this.flushRequested = false;
+    this.pendingAttach = false;
 
     // 🔴 CRÍTICO
     this.initSegment = null;
+    this.initSegmentGeneration = 0;
 
     this.initAppended = false;
     this.appendedCount = 0;

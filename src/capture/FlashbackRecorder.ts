@@ -102,6 +102,7 @@ export type FlashbackRecorderDebugState = {
   liveChunkSeq: number;
   lastTimesliceMs: number;
   hasListener: boolean;
+  recorderGeneration: number;
   ring: DoubleRingDebugState;
 };
 
@@ -170,6 +171,7 @@ export class FlashbackRecorder {
   private isStopping = false;
   private lastTimesliceMs = 1200;
   private dvrInitEmitted = false;
+  private recorderGeneration = 0;
 
   constructor(config: { maxBufferMs: number; debug?: boolean }) {
     this.maxBufferMs = Math.max(1000, Math.trunc(Number(config.maxBufferMs) || 0));
@@ -277,17 +279,20 @@ export class FlashbackRecorder {
       liveChunkSeq: this.liveChunkSeq,
       lastTimesliceMs: this.lastTimesliceMs,
       hasListener: !!this.onChunkListener,
+      recorderGeneration: this.recorderGeneration,
       ring: this.doubleRing.getDebugState(),
     };
   }
 
   public clear(): void {
+    this.recorderGeneration++;
     this.doubleRing.clearAll();
     this.liveChunkSeq = 0;
     this.lastTimesliceMs = 1200;
     this.mimeType = "";
     this.isStopping = false;
     this.dvrInitEmitted = false;
+    this.stream = null;
 
     if (this.debug) {
       console.log("[Flashback][FlashbackRecorder] clear", {
@@ -309,7 +314,11 @@ export class FlashbackRecorder {
 
     if (reset) {
       this.clear();
+    } else {
+      this.recorderGeneration++;
     }
+
+    const generation = this.recorderGeneration;
 
     this.stream = stream;
     this.lastTimesliceMs = slice;
@@ -324,18 +333,40 @@ export class FlashbackRecorder {
     this.mediaRecorder = recorder;
 
     recorder.ondataavailable = (event: BlobEvent) => {
+      if (generation !== this.recorderGeneration) {
+        if (this.debug) {
+          console.log("[Flashback][FlashbackRecorder] stale dataavailable ignored", {
+            generation,
+            activeGeneration: this.recorderGeneration,
+          });
+        }
+        return;
+      }
+
       const blob = event?.data;
       if (!blob || blob.size <= 0) return;
       this.handleDataAvailable(blob, slice);
     };
 
     recorder.onstop = () => {
+      if (generation !== this.recorderGeneration) {
+        if (this.debug) {
+          console.log("[Flashback][FlashbackRecorder] stale stop ignored", {
+            generation,
+            activeGeneration: this.recorderGeneration,
+          });
+        }
+        return;
+      }
+
       const unexpected = !this.isStopping;
       this.mediaRecorder = null;
+      this.stream = null;
 
       if (this.debug) {
         console.log("[Flashback][FlashbackRecorder] stop event", {
           unexpected,
+          generation,
           state: this.getDebugState(),
         });
       }
@@ -355,6 +386,7 @@ export class FlashbackRecorder {
       console.log("[Flashback][FlashbackRecorder] started", {
         timesliceMs: slice,
         mimeType: this.mimeType,
+        generation,
         state: this.getDebugState(),
       });
     }
@@ -365,11 +397,17 @@ export class FlashbackRecorder {
 
     this.isStopping = true;
 
+    const recorder = this.mediaRecorder;
+
     try {
-      this.mediaRecorder.stop();
+      recorder.stop();
     } catch {
-      this.mediaRecorder = null;
+      if (this.mediaRecorder === recorder) {
+        this.mediaRecorder = null;
+      }
+      this.stream = null;
       this.isStopping = false;
+      this.recorderGeneration++;
     }
   }
 
@@ -384,8 +422,12 @@ export class FlashbackRecorder {
 
     while (this.mediaRecorder === recorder) {
       if (safePerfNow() - startedAt > timeoutMs) {
-        this.mediaRecorder = null;
+        if (this.mediaRecorder === recorder) {
+          this.mediaRecorder = null;
+        }
+        this.stream = null;
         this.isStopping = false;
+        this.recorderGeneration++;
         break;
       }
       await sleepMs(25);
@@ -501,6 +543,7 @@ export class FlashbackRecorder {
         timesliceMs,
         bufferedMs: this.getBufferedMs(),
         dvrInitEmitted: this.dvrInitEmitted,
+        generation: this.recorderGeneration,
       });
     }
   }

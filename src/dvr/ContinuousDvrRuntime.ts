@@ -161,12 +161,19 @@ export class ContinuousDvrRuntime {
     }
 
     // Important:
-    // disconnect() only detaches the live flow wiring.
-    // It does NOT clear downstream DVR state by itself.
-    // Explicit state reset belongs to clearPipeline().
+    // disconnect() detaches the live flow wiring and also tears down
+    // any live engine attach state that may still belong to the
+    // previous capture generation.
+    //
+    // Explicit downstream data reset still belongs to clearPipeline(),
+    // but disconnect should not leave a stale live engine attached.
     this.recorder.setOnChunkListener(null);
     this.bridge.setConsumer(null);
     this.bridge.clear();
+
+    if (this.engine) {
+      this.engine.detach();
+    }
 
     this.liveListener = null;
     this.isConnected = false;

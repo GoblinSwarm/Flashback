@@ -284,6 +284,20 @@ export class ReplayCoordinator {
     }
   }
 
+  public closeReplayView(reason = "external_close"): void {
+    const video = this.ui.getVideoElement();
+
+    this.clearTerminalListeners();
+    this.cleanupVideoAfterTerminal(video);
+    this.ui.hideReplay();
+
+    if (this.debug) {
+      console.log("[Flashback][ReplayCoordinator] replay view closed", {
+        reason,
+      });
+    }
+  }
+
   private prepareVideoForAttach(video: HTMLVideoElement): void {
     try {
       video.pause();

@@ -153,6 +153,12 @@ export type FlashbackContentRuntimeConfig = {
   warmup?: AutoStartWarmupConfig;
 };
 
+const SOURCE_CHANGE_STOP_SETTLE_MS = 140;
+
+function sleepMs(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export class FlashbackContentRuntime {
   private readonly runtime: FlashbackRuntime;
   private readonly autoStartManager: AutoStartManager;
@@ -209,6 +215,7 @@ export class FlashbackContentRuntime {
     // when the content runtime stops, the visible replay should close too.
     // Ownership mechanics remain inside ReplaySessionManager/controller.
     this.runtime.controller.closeActiveReplay();
+    this.runtime.replayCoordinator.closeReplayView("runtime_stop");
 
     this.runtime.recorder.stop();
     this.runtime.dvrRuntime.clearPipeline();
@@ -273,6 +280,7 @@ export class FlashbackContentRuntime {
     // High-level orchestration API only.
     // Actual ownership cleanup remains delegated below this layer.
     this.runtime.controller.closeActiveReplay();
+    this.runtime.replayCoordinator.closeReplayView("manual_close");
 
     if (this.debug) {
       console.log("[Flashback][ContentRuntime] replay closed");
@@ -328,13 +336,11 @@ export class FlashbackContentRuntime {
     // when the underlying source video changes, visible replay should close.
     // Ownership disposal remains handled by the replay/controller layer.
     this.runtime.controller.closeActiveReplay();
+    this.runtime.replayCoordinator.closeReplayView("source_changed");
 
-    this.prepareForNewCaptureSession();
+    await this.stopCaptureAndResetDvrForSourceChange(reason);
 
-    await this.runtime.recorder.restartSoft(stream, this.timesliceMs, {
-      reset: true,
-      delayMs: 100,
-    });
+    this.runtime.recorder.start(stream, this.timesliceMs, { reset: true });
 
     if (this.debug) {
       console.log(
@@ -353,9 +359,9 @@ export class FlashbackContentRuntime {
     // Another high-level orchestration rule:
     // if source video is lost, replay should no longer remain visible.
     this.runtime.controller.closeActiveReplay();
+    this.runtime.replayCoordinator.closeReplayView("video_lost");
 
-    this.runtime.recorder.stop();
-    this.runtime.dvrRuntime.clearPipeline();
+    await this.stopCaptureAndClearDvr(reason);
 
     if (this.debug) {
       console.log("[Flashback][ContentRuntime] video lost → recorder stopped", {
@@ -370,6 +376,43 @@ export class FlashbackContentRuntime {
     // state before beginning a new capture generation.
     this.runtime.dvrRuntime.connect();
     this.runtime.dvrRuntime.clearPipeline();
+  }
+
+  private async stopCaptureAndResetDvrForSourceChange(
+    reason: string
+  ): Promise<void> {
+    // Very important:
+    // stop the old recorder FIRST, then allow a short settle window,
+    // and only then clear the DVR chain. This reduces the chance that
+    // late chunks from the previous source generation leak into the
+    // freshly reset pipeline.
+    this.runtime.recorder.stop();
+
+    await sleepMs(SOURCE_CHANGE_STOP_SETTLE_MS);
+
+    this.prepareForNewCaptureSession();
+
+    if (this.debug) {
+      console.log("[Flashback][ContentRuntime] source change DVR reset complete", {
+        reason,
+        settleMs: SOURCE_CHANGE_STOP_SETTLE_MS,
+      });
+    }
+  }
+
+  private async stopCaptureAndClearDvr(reason: string): Promise<void> {
+    this.runtime.recorder.stop();
+
+    await sleepMs(SOURCE_CHANGE_STOP_SETTLE_MS);
+
+    this.runtime.dvrRuntime.clearPipeline();
+
+    if (this.debug) {
+      console.log("[Flashback][ContentRuntime] capture stopped and DVR cleared", {
+        reason,
+        settleMs: SOURCE_CHANGE_STOP_SETTLE_MS,
+      });
+    }
   }
 
   private handleReplayAttachFailure(

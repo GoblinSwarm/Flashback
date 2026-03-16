@@ -166,6 +166,26 @@ function sleepMs(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function getLocationKey(): string {
+  try {
+    const { origin, pathname, search } = window.location;
+    return `${origin}${pathname}${search}`;
+  } catch {
+    return "";
+  }
+}
+
+function buildVideoSourceKey(video: HTMLVideoElement | null): string {
+  if (!video) {
+    return "";
+  }
+
+  const locationKey = getLocationKey();
+  const srcKey = String(video.currentSrc || video.src || "").trim();
+
+  return `${locationKey}::${srcKey || "no_src"}`;
+}
+
 function isTimeProgressOk(
   video: HTMLVideoElement,
   history: TimeSample[],
@@ -270,10 +290,12 @@ export class AutoStartManager {
   private onVideoChanged: VideoChangedCb | null = null;
 
   private lastCandidate: HTMLVideoElement | null = null;
+  private lastCandidateSourceKey = "";
   private lastCandidateReason = "";
   private stableCount = 0;
 
   private currentStable: HTMLVideoElement | null = null;
+  private currentStableSourceKey = "";
 
   private pendingPrevStable: HTMLVideoElement | null = null;
   private pendingKind: "ready" | "changed" | null = null;
@@ -365,10 +387,12 @@ export class AutoStartManager {
 
   private resetState(): void {
     this.lastCandidate = null;
+    this.lastCandidateSourceKey = "";
     this.lastCandidateReason = "";
     this.stableCount = 0;
 
     this.currentStable = null;
+    this.currentStableSourceKey = "";
 
     this.pendingPrevStable = null;
     this.pendingKind = null;
@@ -421,6 +445,7 @@ export class AutoStartManager {
 
       const candidate = resolution.video;
       const reason = resolution.reason || "no_reason";
+      const candidateSourceKey = buildVideoSourceKey(candidate);
 
       if (!candidate) {
         this.handleNoCandidate(reason);
@@ -430,23 +455,38 @@ export class AutoStartManager {
 
       this.noCandidateCount = 0;
 
-      if (this.lastCandidate !== candidate) {
-        this.logDebug("[Flashback][AutoStartManager] candidate changed", {
+      const candidateIdentityChanged =
+        this.lastCandidate !== candidate ||
+        this.lastCandidateSourceKey !== candidateSourceKey;
+
+      if (candidateIdentityChanged) {
+        this.logDebug("[Flashback][AutoStartManager] candidate identity changed", {
           reason,
+          sameElement: this.lastCandidate === candidate,
+          prevSourceKey: this.lastCandidateSourceKey || null,
+          nextSourceKey: candidateSourceKey || null,
         });
 
         this.lastCandidate = candidate;
+        this.lastCandidateSourceKey = candidateSourceKey;
         this.lastCandidateReason = reason;
         this.stableCount = 0;
         this.timeHistory = [];
 
         // Important:
-        // a candidate change is NOT immediately a stable change event.
-        // We first require the new candidate to prove stability.
-        if (this.currentStable && this.currentStable !== candidate) {
+        // a candidate/source change is NOT immediately a stable change event.
+        // We first require the new candidate identity to prove stability.
+        if (
+          this.currentStable &&
+          (
+            this.currentStable !== candidate ||
+            this.currentStableSourceKey !== candidateSourceKey
+          )
+        ) {
           this.pendingPrevStable = this.currentStable;
           this.pendingKind = "changed";
           this.currentStable = null;
+          this.currentStableSourceKey = "";
         }
       } else {
         this.lastCandidateReason = reason || this.lastCandidateReason;
@@ -456,12 +496,15 @@ export class AutoStartManager {
 
       this.logDebug("[Flashback][AutoStartManager] quality check", {
         sameCandidate: this.lastCandidate === candidate,
+        sameSourceKey: this.lastCandidateSourceKey === candidateSourceKey,
         qualityOk: quality.ok,
         qualityReason: quality.reason,
         stableCount: this.stableCount,
         stableTicksRequired: effectiveConfig.stableTicks,
         candidateReason: reason,
         currentStable: this.currentStable === candidate,
+        currentStableSourceKey: this.currentStableSourceKey,
+        candidateSourceKey,
         hasCurrentStable: !!this.currentStable,
         noCandidateCount: this.noCandidateCount,
       });
@@ -473,14 +516,18 @@ export class AutoStartManager {
         }
 
         // Important:
-        // if we are still looking at the SAME candidate, tolerate a small
+        // if we are still looking at the SAME candidate identity, tolerate a small
         // temporary quality fluctuation instead of resetting stabilization
         // immediately. Twitch often micro-stalls during startup.
-        if (candidate === this.lastCandidate) {
+        if (
+          candidate === this.lastCandidate &&
+          candidateSourceKey === this.lastCandidateSourceKey
+        ) {
           this.logDebug("[Flashback][AutoStartManager] candidate temporarily unstable", {
             reason: quality.reason,
             stableCount: this.stableCount,
             candidateReason: this.lastCandidateReason,
+            candidateSourceKey,
           });
 
           this.kickLoop(effectiveConfig.pollMs);
@@ -496,6 +543,7 @@ export class AutoStartManager {
         nextStableCount: this.stableCount + 1,
         stableTicksRequired: effectiveConfig.stableTicks,
         candidateReason: this.lastCandidateReason,
+        candidateSourceKey,
       });
 
       this.stableCount++;
@@ -507,6 +555,7 @@ export class AutoStartManager {
 
       if (!this.currentStable) {
         this.currentStable = candidate;
+        this.currentStableSourceKey = candidateSourceKey;
 
         const kind = this.pendingKind ?? "ready";
         const prev = this.pendingPrevStable;
@@ -519,7 +568,11 @@ export class AutoStartManager {
         // reduce false positives during last-moment DOM churn.
         await sleepMs(EXTRA_READY_DELAY_MS);
 
-        if (!this.running || this.currentStable !== candidate) {
+        if (
+          !this.running ||
+          this.currentStable !== candidate ||
+          this.currentStableSourceKey !== candidateSourceKey
+        ) {
           this.kickLoop(effectiveConfig.pollMs);
           return;
         }
@@ -528,11 +581,13 @@ export class AutoStartManager {
           if (kind === "changed" && prev) {
             this.logDebug("[Flashback][AutoStartManager] stable changed", {
               reason: this.lastCandidateReason,
+              candidateSourceKey,
             });
             this.onVideoChanged?.(candidate, { reason: this.lastCandidateReason });
           } else {
             this.logDebug("[Flashback][AutoStartManager] stable ready", {
               reason: this.lastCandidateReason,
+              candidateSourceKey,
             });
             this.onVideoReady?.(candidate, { reason: this.lastCandidateReason });
           }
@@ -563,6 +618,8 @@ export class AutoStartManager {
       noCandidateCount: this.noCandidateCount,
       stableCount: this.stableCount,
       hadLastCandidate: !!this.lastCandidate,
+      lastCandidateSourceKey: this.lastCandidateSourceKey || null,
+      currentStableSourceKey: this.currentStableSourceKey || null,
     });
 
     const hadStable = !!this.currentStable || !!this.pendingPrevStable;
@@ -575,6 +632,7 @@ export class AutoStartManager {
       // stable video lost. This helps absorb DOM churn / transient stalls.
       if (this.noCandidateCount < this.lostGraceTicks) {
         this.lastCandidate = null;
+        this.lastCandidateSourceKey = "";
         this.lastCandidateReason = "";
         this.stableCount = 0;
         this.timeHistory = [];
@@ -584,10 +642,12 @@ export class AutoStartManager {
       const lostReason = `video_lost:${reason}`;
 
       this.currentStable = null;
+      this.currentStableSourceKey = "";
       this.pendingPrevStable = null;
       this.pendingKind = null;
 
       this.lastCandidate = null;
+      this.lastCandidateSourceKey = "";
       this.lastCandidateReason = "";
       this.stableCount = 0;
       this.timeHistory = [];
@@ -611,6 +671,7 @@ export class AutoStartManager {
     }
 
     this.lastCandidate = null;
+    this.lastCandidateSourceKey = "";
     this.lastCandidateReason = "";
     this.stableCount = 0;
     this.timeHistory = [];

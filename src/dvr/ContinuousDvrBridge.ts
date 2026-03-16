@@ -80,8 +80,12 @@ export class ContinuousDvrBridge {
   public setConsumer(fn: DvrConsumer | null): void {
     this.consumer = fn;
 
-    // New consumer → new generation
+    // New consumer identity → new generation.
+    // Also reset emission state so the next generation must
+    // establish its own init-before-media ordering.
     this.generation++;
+    this.initEmitted = false;
+    this.pending.length = 0;
 
     this.log("consumer set", {
       hasConsumer: !!fn,
@@ -90,10 +94,6 @@ export class ContinuousDvrBridge {
 
     if (!fn) {
       return;
-    }
-
-    if (this.initEmitted && this.pending.length > 0) {
-      this.flushPending(fn);
     }
   }
 
@@ -124,6 +124,8 @@ export class ContinuousDvrBridge {
     }
 
     const consumer = this.consumer;
+    const generation = this.generation;
+
     if (!consumer) {
       this.log("ingest skipped: no consumer", {
         seq: info?.seq ?? null,
@@ -133,7 +135,7 @@ export class ContinuousDvrBridge {
     }
 
     if (info.isInit === true) {
-      this.handleInit(blob, info, consumer);
+      this.handleInit(blob, info, consumer, generation);
       return;
     }
 
@@ -142,10 +144,24 @@ export class ContinuousDvrBridge {
       return;
     }
 
-    this.forwardMedia(blob, info, consumer);
+    this.forwardMedia(blob, info, consumer, generation);
   }
 
-  private handleInit(blob: Blob, info: DvrChunkInfo, consumer: DvrConsumer): void {
+  private handleInit(
+    blob: Blob,
+    info: DvrChunkInfo,
+    consumer: DvrConsumer,
+    generation: number
+  ): void {
+    if (generation !== this.generation || consumer !== this.consumer) {
+      this.log("init ignored: stale consumer generation", {
+        seq: info?.seq ?? null,
+        generation,
+        activeGeneration: this.generation,
+      });
+      return;
+    }
+
     if (this.initEmitted) {
       this.log("init ignored: already emitted", {
         seq: info?.seq ?? null,
@@ -163,25 +179,33 @@ export class ContinuousDvrBridge {
       generation: this.generation,
     });
 
-    this.flushPending(consumer);
+    this.flushPending(consumer, generation);
   }
 
-  private flushPending(consumer: DvrConsumer): void {
+  private flushPending(consumer: DvrConsumer, generation: number): void {
     if (!this.pending.length) {
       return;
     }
 
-    const currentGeneration = this.generation;
+    const entries = this.pending.slice();
+    this.pending.length = 0;
 
-    for (const entry of this.pending) {
-      if (entry.generation !== currentGeneration) {
+    for (const entry of entries) {
+      if (generation !== this.generation || consumer !== this.consumer) {
+        this.log("flush aborted: stale consumer generation", {
+          flushGeneration: generation,
+          activeGeneration: this.generation,
+          remaining: entries.length,
+        });
+        return;
+      }
+
+      if (entry.generation !== generation) {
         continue;
       }
 
       consumer(entry.blob, this.toConsumerInfo(entry.info, false));
     }
-
-    this.pending.length = 0;
   }
 
   private bufferPending(blob: Blob, info: DvrChunkInfo): void {
@@ -209,7 +233,21 @@ export class ContinuousDvrBridge {
     });
   }
 
-  private forwardMedia(blob: Blob, info: DvrChunkInfo, consumer: DvrConsumer): void {
+  private forwardMedia(
+    blob: Blob,
+    info: DvrChunkInfo,
+    consumer: DvrConsumer,
+    generation: number
+  ): void {
+    if (generation !== this.generation || consumer !== this.consumer) {
+      this.log("media ignored: stale consumer generation", {
+        seq: info?.seq ?? null,
+        generation,
+        activeGeneration: this.generation,
+      });
+      return;
+    }
+
     consumer(blob, this.toConsumerInfo(info, false));
   }
 

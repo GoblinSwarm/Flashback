@@ -112,6 +112,7 @@ export type ContinuousDvrPipelineDebugState = {
   estimatedWindowMs: number;
   oldestSegmentAgeMs: number;
   newestSegmentAgeMs: number;
+  generation: number;
 };
 
 function getNowMs(): number {
@@ -126,6 +127,7 @@ export class ContinuousDvrPipeline {
   private initSegment: Blob | null = null;
   private mediaSegments: ContinuousDvrMediaSegment[] = [];
   private mediaBytes = 0;
+  private generation = 0;
 
   private readonly maxMediaSegments: number;
 
@@ -160,9 +162,12 @@ export class ContinuousDvrPipeline {
     this.initSegment = null;
     this.mediaSegments = [];
     this.mediaBytes = 0;
+    this.generation++;
 
     if (this.debug) {
-      console.log("[Flashback][ContinuousDvrPipeline] cleared");
+      console.log("[Flashback][ContinuousDvrPipeline] cleared", {
+        generation: this.generation,
+      });
     }
   }
 
@@ -239,6 +244,7 @@ export class ContinuousDvrPipeline {
         newest && Number.isFinite(now - newest.receivedAtMs)
           ? Math.max(0, now - newest.receivedAtMs)
           : 0,
+      generation: this.generation,
     };
   }
 
@@ -251,6 +257,7 @@ export class ContinuousDvrPipeline {
     if (previousInit && previousInit !== blob) {
       this.mediaSegments = [];
       this.mediaBytes = 0;
+      this.generation++;
 
       if (this.debug) {
         console.log(
@@ -258,6 +265,7 @@ export class ContinuousDvrPipeline {
           {
             previousInitBytes: previousInit.size,
             nextInitBytes: blob.size,
+            generation: this.generation,
           }
         );
       }
@@ -269,6 +277,7 @@ export class ContinuousDvrPipeline {
       console.log("[Flashback][ContinuousDvrPipeline] init updated", {
         size: blob.size,
         type: blob.type,
+        generation: this.generation,
       });
     }
   }
@@ -326,6 +335,7 @@ export class ContinuousDvrPipeline {
         receivedAtMs: safeTimestampMs,
         originalReceivedAtMs: receivedAtMs,
         durationMs,
+        generation: this.generation,
       });
     }
   }
